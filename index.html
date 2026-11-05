@@ -15,7 +15,9 @@
     --accent: #2f5f9e;       /* ボタン・選択中の色 */
     --accent-soft: #e8f0fa;
     --teal: #2a8a78;         /* スコア：穏やか */
-    --amber: #d99a00;        /* スコア：要注意 */
+    --amber: #d99a00;        /* スコア：軽い怒り(40〜) */
+    --orange: #e0702a;       /* スコア：怒り(70〜) */
+    --orange-text: #9a4310;
     --amber-text: #7a5200;
     --red: #d93636;          /* スコア：顔を映すライン超え */
     --sans: system-ui, -apple-system, "Hiragino Sans", "Hiragino Kaku Gothic ProN", "Yu Gothic UI", "Yu Gothic", Meiryo, sans-serif;
@@ -135,8 +137,9 @@
   .judge-wrap{ margin-top: 20px; }
   .judge-track{ position: relative; height: 22px; overflow: hidden; background: #fff; border: 1px solid #aeb6bd; border-radius: 3px; }
   .judge-zone{ position: absolute; top: 0; bottom: 0; }
-  .judge-zone.z-green{ left: 0; width: 58.333%; background: #dcefe9; }
-  .judge-zone.z-amber{ left: 58.333%; width: 25%; background: #faedc4; }
+  .judge-zone.z-green{ left: 0; width: 33.333%; background: #dcefe9; }
+  .judge-zone.z-amber{ left: 33.333%; width: 25%; background: #faedc4; }
+  .judge-zone.z-orange{ left: 58.333%; width: 25%; background: #fadfc9; }
   .judge-zone.z-red{ left: 83.333%; width: 16.667%; background: #f6d2d2; }
   .judge-pointer{
     position: absolute; top: 0; bottom: 0; width: 4px; left: 0%; margin-left: -2px;
@@ -172,8 +175,20 @@
   .badge::before{ content: ''; width: 8px; height: 8px; border-radius: 50%; background: #b9c0c6; }
   .badge.on{ color: var(--text); }
   .badge.on::before{ background: var(--teal); }
-  .badge.caution{ color: var(--amber-text); font-weight: 700; }
-  .badge.caution::before{ background: var(--amber); }
+  .live-asr{ margin: 0 0 14px; border: 1px solid var(--line, #d5dadf); border-radius: 4px; background: #fff; }
+  .live-asr-head{ display:flex; justify-content:space-between; gap:8px; padding:6px 10px; font-size:12.5px; border-bottom:1px solid #e6e9ec; background:#f6f8f9; }
+  .live-asr-head span{ color:#5f6870; font-size:12px; text-align:right; }
+  .live-asr-body{ padding:8px 10px; font-size:14px; line-height:1.6; max-height:132px; overflow-y:auto; }
+  .live-asr-opt{ display:block; padding:6px 10px; font-size:12.5px; border-top:1px solid #e6e9ec; }
+  .live-asr-opt small{ color:#5f6870; }
+  .live-asr-body .ln{ margin:0 0 2px; }
+  .live-asr-body .ln .tm{ color:#8a939b; font-size:11px; margin-right:6px; font-variant-numeric:tabular-nums; }
+  .live-asr-body .ln.interim{ color:#8a939b; }
+  .live-asr-body .ln.ng{ color:var(--red); font-weight:700; }
+  .badge.mild{ color: var(--amber-text); font-weight: 700; }
+  .badge.mild::before{ background: var(--amber); }
+  .badge.caution{ color: var(--orange-text); font-weight: 700; }
+  .badge.caution::before{ background: var(--orange); }
   .badge.warn{ color: var(--red); font-weight: 700; }
   .badge.warn::before{ background: var(--red); }
 
@@ -270,7 +285,7 @@
 
 <div class="wrap">
   <h1>音声認識AIによるゲーム中の感情制御</h1>
-  <p class="lede">最初に普段の話し声で基準を取ります。基準より大きい声・高いピッチ・早口とNGワードでスコアが増え、時間がたつと減ります。70で要注意、100に達すると自分の顔を映します。3つの表示パターンを切り替えて、冷静になるまでの秒数を比べられます。</p>
+  <p class="lede">最初に普段の話し声で基準を取ります。基準より大きい声・高いピッチ・早口とNGワードでスコアが増え、時間がたつと減ります。スコアは 0〜40 平常／40〜70 軽い怒り／70〜100 怒り／100以上 激怒 の四段階で表示し、100に達すると自分の顔を映します。3つの表示パターンを切り替えて、冷静になるまでの秒数を比べられます。</p>
   <div class="disclaimer">
     映像と、音量・ピッチ・話す速さの解析は、この端末のブラウザ内だけで処理します。NGワードの検知に使う音声認識はブラウザの標準機能で、音声がブラウザの提供元（Chromeの場合はGoogle）のサーバーに送られることがあります。録音や保存はしません。音量の変化を正しく測るため、マイクの自動音量調整・ノイズ抑制・エコー除去は切っています。そのため、スピーカーでゲーム音を出すとマイクが拾ってしまいます。ヘッドセットでの利用をおすすめします。
   </div>
@@ -381,6 +396,12 @@
         </div>
       </div>
 
+      <div class="live-asr" id="liveAsr">
+        <div class="live-asr-head"><b>リアルタイム文字起こし</b><span id="asrDiag">待機中</span></div>
+        <div class="live-asr-body" id="liveTrans"><span class="feed-empty">開始すると、聞き取った言葉がここに出ます（NGワード以外も全部）</span></div>
+        <label class="live-asr-opt"><input type="checkbox" id="voiceOn" checked> 声の解析（大きさ・高さ・速さ）を使う　<small>スマホで文字が出ないときは外して開始してください。文字起こしを優先し、NGワードだけで加点します。</small></label>
+      </div>
+
       <div class="calib-box" id="calibBox">
         <div class="calib-text" id="calibText">開始すると、最初に普段の話し声で基準を取ります（声の大きさ・ピッチ・話す速さ）。以降は、その基準との比較で判定します。</div>
         <div class="meter-bar-track"><div class="meter-bar-fill" id="calibFill"></div></div>
@@ -389,10 +410,12 @@
       <div class="monitor-top">
         <div class="gauge-wrap">
           <svg width="150" height="150" viewBox="0 0 150 150">
-            <!-- ゾーン帯（スコア 0〜70 穏やか / 70〜100 要注意 / 100〜120 顔を映す。全周＝120点） -->
+            <!-- ゾーン帯（スコア 0〜40 平常 / 40〜70 軽い怒り / 70〜100 怒り / 100〜120 激怒。全周＝120点） -->
             <circle cx="75" cy="75" r="66" fill="none" stroke="#2a8a78" stroke-opacity="0.2" stroke-width="12"
-              stroke-dasharray="241.90 414.69" stroke-dashoffset="0"/>
+              stroke-dasharray="138.23 414.69" stroke-dashoffset="0"/>
             <circle cx="75" cy="75" r="66" fill="none" stroke="#d99a00" stroke-opacity="0.3" stroke-width="12"
+              stroke-dasharray="103.67 414.69" stroke-dashoffset="-138.23"/>
+            <circle cx="75" cy="75" r="66" fill="none" stroke="#e0702a" stroke-opacity="0.3" stroke-width="12"
               stroke-dasharray="103.67 414.69" stroke-dashoffset="-241.90"/>
             <circle cx="75" cy="75" r="66" fill="none" stroke="#d93636" stroke-opacity="0.3" stroke-width="12"
               stroke-dasharray="69.12 414.69" stroke-dashoffset="-345.58"/>
@@ -404,7 +427,8 @@
             <div class="pct" id="pctText">0</div>
             <div class="lbl">怒りスコア</div>
           </div>
-          <div class="gauge-tick" style="left:37px; top:141px; transform:translate(-50%,-50%); color:var(--amber-text); border-color:var(--amber);">70</div>
+          <div class="gauge-tick" style="left:141px; top:113px; transform:translate(-50%,-50%); color:var(--amber-text); border-color:var(--amber);">40</div>
+          <div class="gauge-tick" style="left:37px; top:141px; transform:translate(-50%,-50%); color:var(--orange-text); border-color:var(--orange);">70</div>
           <div class="gauge-tick" style="left:9px; top:37px; transform:translate(-50%,-50%); color:var(--red); border-color:var(--red);">100</div>
         </div>
         <div class="cam-box" id="camBox">
@@ -417,13 +441,15 @@
         <div class="judge-track">
           <div class="judge-zone z-green"></div>
           <div class="judge-zone z-amber"></div>
+          <div class="judge-zone z-orange"></div>
           <div class="judge-zone z-red"></div>
           <div class="judge-pointer" id="judgePointer"></div>
         </div>
         <div class="judge-ticks">
-          <span style="left:0%">0</span>
-          <span style="left:58.333%">70 要注意</span>
-          <span style="left:83.333%">100 顔を映す</span>
+          <span style="left:0%">0 平常</span>
+          <span style="left:33.333%">40 軽い怒り</span>
+          <span style="left:58.333%">70 怒り</span>
+          <span style="left:83.333%">100 激怒</span>
           <span style="left:100%">120</span>
         </div>
       </div>
@@ -474,7 +500,8 @@
     <div class="chart-legend">
       <span><i class="lg-line"></i>怒りスコア</span>
       <span><i class="lg-dot"></i>NGワードを検知</span>
-      <span><i class="lg-band"></i>顔表示ライン(100)を超えていた間</span>
+      <span><i class="lg-band"></i>激怒(100以上・顔表示)だった間</span>
+      <span>背景の色＝平常(緑)／軽い怒り(黄)／怒り(橙)／激怒(赤)</span>
     </div>
     <div class="log-tools">
       <button class="btn ghost small" id="chartPngBtn">グラフを画像で保存</button>
@@ -576,7 +603,9 @@ const gaugeCircle = document.getElementById('gaugeCircle');
 // ===== SCORING BEGIN =====
   // スコア方式：持ち点0から加点し、時間経過で減点する。
   const SCORE_CAP = 120;        // スコアの上限（ゲージの全周＝120点）
-  const CAUTION_AT = 70;        // この点以上で「要注意」。顔表示のあと、この点を下回ると冷静化とみなす
+  function stageOf(sc){ return sc >= TRIGGER_AT ? '激怒' : sc >= ANGRY_AT ? '怒り' : sc >= MILD_AT ? '軽い怒り' : '平常'; }
+  const MILD_AT = 40;          // この点以上で「軽い怒り」（四段階の暫定値。調整用の試行で見直す）
+  const ANGRY_AT = 70;        // この点以上で「怒り」。顔表示のあと、この点を下回ると冷静化とみなす
   const TRIGGER_AT = 100;       // この点に達したら自分の顔を表示
 
   const PEAK_HOLD_TAU = 1.0;     // 発話ごとの「最高値」を、この時間（秒）かけて元に戻るピークホールドで近似する（先行研究は最高音圧・最高F0を使用）
@@ -704,7 +733,52 @@ const gaugeCircle = document.getElementById('gaugeCircle');
   let wordFeed = [];
   let countedHits = {};   // 発話(resultIndex)ごとに「そのワードを何回数えたか」を記録。途中結果の二重カウントは防ぎつつ、繰り返した分は加点する
   let finalDone = {};   // 確定した発話をすでに記録したか
-  function resetHitCounter(){ countedHits = {}; finalDone = {}; }
+  let flushedText = {};   // 途中結果のまま確定扱いにした分（その後に同じ結果が伸びたら、続きだけ記録する）
+  let interimText = {};   // まだ確定していない途中結果（resultIndex → 文字列）。スマホは確定(isFinal)が来ないことがあるので、別に保持して拾う
+  let interimTimer = null;
+  let preUtt = [];        // 基準づくり中など、記録開始前に聞き取った発話
+  let transLines = [];    // 画面表示用 { clock, text, ng }
+  const liveTransEl = document.getElementById('liveTrans');
+  const asrDiagEl = document.getElementById('asrDiag');
+  function resetHitCounter(){ countedHits = {}; finalDone = {}; interimText = {}; flushedText = {}; }
+  function restOf(i, tr){ const f = flushedText[i]; return (f && tr.indexOf(f) === 0) ? tr.slice(f.length).trim() : tr; }
+  function asrDiag(msg){ if(asrDiagEl) asrDiagEl.textContent = msg; }
+  function renderTrans(){
+    let html = transLines.slice(-30).map(function(l){
+      return '<div class="ln' + (l.ng ? ' ng' : '') + '"><span class="tm">' + esc(l.clock) + '</span>' + esc(l.text) + '</div>';
+    }).join('');
+    const ip = Object.keys(interimText).sort(function(a,b){ return a - b; }).map(function(k){ return interimText[k]; }).filter(Boolean).join(' ');
+    if(ip) html += '<div class="ln interim">' + esc(ip) + ' …</div>';
+    if(!html) html = '<span class="feed-empty">開始すると、聞き取った言葉がここに出ます（NGワード以外も全部）</span>';
+    liveTransEl.innerHTML = html;
+    liveTransEl.scrollTop = liveTransEl.scrollHeight;
+  }
+  function hasNg(text){
+    const chunk = normWord(text);
+    return buildDict().some(function(d){ return d.short ? chunk === d.norm : chunk.indexOf(d.norm) !== -1; });
+  }
+  // 発話を1件確定する（画面表示＋記録）。基準づくり中でも書き起こしは残す
+  function commitUtterance(text){
+    text = String(text || '').trim();
+    if(!text) return;
+    transLines.push({ clock: clockOf(), text: text, ng: hasNg(text) });
+    if(recStart){ recordUtterance(text); } else { preUtt.push({ clock: clockOf(), text: text }); }
+    renderTrans();
+  }
+  // 確定していない途中結果をまとめて確定扱いにする（途中結果が前の結果の続きなら、短い方は捨てる）
+  function flushInterim(){
+    if(interimTimer){ clearTimeout(interimTimer); interimTimer = null; }
+    const keys = Object.keys(interimText).filter(function(k){ return interimText[k]; }).sort(function(a,b){ return a - b; });
+    const texts = keys.map(function(k){ flushedText[k] = (flushedText[k] || '') + interimText[k]; return interimText[k]; });
+    texts.forEach(function(t, i){
+      const next = texts[i + 1];
+      if(next && next.indexOf(t) === 0) return;   // 次の結果が同じ書き出しで続いているなら、短い方は重複
+      commitUtterance(t);
+    });
+    interimText = {};
+    renderTrans();
+  }
+  function resetTranscript(){ transLines = []; preUtt = []; interimText = {}; flushedText = {}; if(interimTimer){ clearTimeout(interimTimer); interimTimer = null; } renderTrans(); }
 
   function syncPoints(){
     Object.keys(ptsEls).forEach(function(k){
@@ -751,11 +825,23 @@ const gaugeCircle = document.getElementById('gaugeCircle');
   }
 
   function handleSpeech(e){
+    // 文字起こしは基準づくり中でも全部残す（加点だけしない）
+    for(let i = e.resultIndex; i < e.results.length; i++){
+      const tr = e.results[i][0].transcript;
+      if(e.results[i].isFinal){
+        if(!finalDone[i]){ finalDone[i] = true; delete interimText[i]; commitUtterance(restOf(i, tr)); }
+      } else if(!finalDone[i]){
+        interimText[i] = restOf(i, tr);
+      }
+    }
+    renderTrans();
+    // 確定が来ない環境（スマホなど）向け：1.8秒新しい結果がなければ、途中結果を確定扱いで記録
+    if(interimTimer) clearTimeout(interimTimer);
+    interimTimer = setTimeout(flushInterim, 1800);
     if(calibrating) return;
     const dict = buildDict();
     let addSum = 0;
     for(let i = e.resultIndex; i < e.results.length; i++){
-      if(e.results[i].isFinal && !finalDone[i]){ finalDone[i] = true; recordUtterance(e.results[i][0].transcript); }
       const chunk = normWord(e.results[i][0].transcript);
       if(!chunk) continue;
       const seen = countedHits[i] || (countedHits[i] = {});
@@ -1031,12 +1117,20 @@ const gaugeCircle = document.getElementById('gaugeCircle');
   // 声の大小の差を正しく測るため、ブラウザの自動音量調整・ノイズ抑制・エコー除去は切る
   const RAW_AUDIO = { echoCancellation: false, noiseSuppression: false, autoGainControl: false };
 
+  let voiceOff = false;
   async function startSystem(){
     statusLine.innerHTML = '権限を確認しています…';
     let camOk = true;
+    voiceOff = !document.getElementById('voiceOn').checked;
+    document.getElementById('voiceOn').disabled = true;
+    if(voiceOff){
+      // 声の解析なし：マイクは音声認識だけが使う（スマホでは、2つが同じマイクを取り合うと文字が出なくなることがあるため）
+      try{ stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user', width: { ideal: 320 }, height: { ideal: 240 } } }); }
+      catch(err){ stream = null; camOk = false; }
+    } else
 
     // 1) まず音声+映像を同時に試す
-    try{
+    { try{
       stream = await navigator.mediaDevices.getUserMedia({ audio: RAW_AUDIO, video: { facingMode: 'user', width: { ideal: 320 }, height: { ideal: 240 } } });
     }catch(err){
       // 2) 失敗したら音声のみで再挑戦（カメラなし/権限なしでも一部機能を使えるように）
@@ -1048,9 +1142,9 @@ const gaugeCircle = document.getElementById('gaugeCircle');
         statusLine.innerHTML = '<span class="err">マイク・カメラのどちらも取得できませんでした。' + explainError(err2) + '</span>';
         return;
       }
-    }
+    } }
 
-    const hasVideoTrack = stream.getVideoTracks().length > 0;
+    const hasVideoTrack = !!stream && stream.getVideoTracks().length > 0;
 
     if(hasVideoTrack){
       liveVideo.srcObject = stream;
@@ -1066,25 +1160,35 @@ const gaugeCircle = document.getElementById('gaugeCircle');
       badgeCam.textContent = 'カメラ：利用不可';
     }
 
-    badgeMic.textContent = 'マイク：稼働中';
-    badgeMic.classList.add('on');
-
-    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-    if(audioCtx.resume){ audioCtx.resume().catch(function(){}); }   // iOSなどで止まった状態から始まることがある
     acquireWakeLock();
-    const source = audioCtx.createMediaStreamSource(stream);
-    analyser = audioCtx.createAnalyser();
-    analyser.fftSize = 2048; // ピッチ(自己相関法)の解析精度を確保するため拡張
-    dataArray = new Uint8Array(analyser.fftSize);
-    floatDataArray = new Float32Array(analyser.fftSize);
-    source.connect(analyser);
+    if(voiceOff){
+      badgeMic.textContent = 'マイク：音声認識のみ';
+      badgeMic.classList.add('on');
+      analyser = {   // 無音を返すだけの代用品（声の解析をしないため）
+        getByteTimeDomainData: function(a){ a.fill(128); },
+        getFloatTimeDomainData: function(a){ a.fill(0); }
+      };
+      dataArray = new Uint8Array(2048);
+      floatDataArray = new Float32Array(2048);
+    } else {
+      badgeMic.textContent = 'マイク：稼働中';
+      badgeMic.classList.add('on');
+      audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      if(audioCtx.resume){ audioCtx.resume().catch(function(){}); }   // iOSなどで止まった状態から始まることがある
+      const source = audioCtx.createMediaStreamSource(stream);
+      analyser = audioCtx.createAnalyser();
+      analyser.fftSize = 2048; // ピッチ(自己相関法)の解析精度を確保するため拡張
+      dataArray = new Uint8Array(analyser.fftSize);
+      floatDataArray = new Float32Array(analyser.fftSize);
+      source.connect(analyser);
+    }
 
     frameCounter = 0;
     lastFrameTs = 0;
     score = 0;
     rmsSmoothed = 0;
     resetSession();
-    beginCalibration();
+    if(voiceOff){ calibrating = false; calibBox.style.display = 'none'; } else { calibBox.style.display = ''; beginCalibration(); }
 
     setupSpeechRecognition();
 
@@ -1093,8 +1197,10 @@ const gaugeCircle = document.getElementById('gaugeCircle');
     stopBtn.style.display = 'block';
     mStartBtn.style.display = 'none';
     mStopBtn.style.display = 'block';
-    recalBtn.style.display = 'block';
-    if(camOk){
+    recalBtn.style.display = voiceOff ? 'none' : 'block';
+    if(voiceOff){
+      statusLine.innerHTML = '<span class="ok">稼働中（声の解析なし）。聞き取った言葉を「リアルタイム文字起こし」に表示し、NGワードでスコアを加点します。</span>';
+    } else if(camOk){
       statusLine.innerHTML = '<span class="ok">稼働中です。まず普段の話し声で基準を取ります（計測欄の「基準づくり」を見てください）。</span>';
     }
 
@@ -1175,11 +1281,16 @@ const gaugeCircle = document.getElementById('gaugeCircle');
 
   function resetSession(){
     recStart = 0; recLastSample = 0; samples = []; ngEvents = []; bands = []; utterances = []; wordCounts = {}; hoverIdx = -1;
+    resetTranscript();
     renderRecord();
   }
 
   function recSample(nowTs){
-    if(!recStart){ recStart = Date.now(); recLastSample = 0; }
+    if(!recStart){
+      recStart = Date.now(); recLastSample = 0;
+      const pre = preUtt; preUtt = [];
+      pre.forEach(function(u){ recordUtterance(u.text, u.clock); });
+    }
     if(recLastSample && nowTs - recLastSample < 1000) return;
     recLastSample = nowTs;
     samples.push({
@@ -1188,7 +1299,7 @@ const gaugeCircle = document.getElementById('gaugeCircle');
       score: score,
       vol: baseRms ? ratioHeld : 0,
       rate: (rateNow !== null && baseRate) ? rateNow / baseRate : null,
-      level: score >= TRIGGER_AT ? '顔表示ライン超え' : score >= CAUTION_AT ? '要注意' : '穏やか'
+      level: stageOf(score)
     });
     renderRecord();
   }
@@ -1203,11 +1314,11 @@ const gaugeCircle = document.getElementById('gaugeCircle');
     if(b && b.t1 === null) b.t1 = elapsedSec();
   }
 
-  function recordUtterance(text){
+  function recordUtterance(text, clockStr){
     if(!recStart) return;
     text = String(text || '').trim();
     if(!text) return;
-    utterances.push({ t: elapsedSec(), clock: clockOf(), text: text, score: Math.round(score) });
+    utterances.push({ t: elapsedSec(), clock: clockStr || clockOf(), text: text, score: Math.round(score) });
     // 1) NG辞書に当てはまる語は、辞書の表記で数える（分割の精度に左右されないように）
     const chunk = normWord(text);
     buildDict().forEach(function(d){
@@ -1233,13 +1344,17 @@ const gaugeCircle = document.getElementById('gaugeCircle');
     if(samples.length === 0){
       recSummaryEl.textContent = '開始して基準づくりが終わると、1秒ごとにスコアを記録します。';
     } else {
-      let max = 0, sum = 0, caution = 0;
-      samples.forEach(function(s){ max = Math.max(max, s.score); sum += s.score; if(s.score >= CAUTION_AT) caution++; });
+      let max = 0, sum = 0; const stc = { '平常': 0, '軽い怒り': 0, '怒り': 0, '激怒': 0 };
+      samples.forEach(function(s){ max = Math.max(max, s.score); sum += s.score; stc[stageOf(s.score)]++; });
+      function sp(k){ return Math.round(stc[k] / samples.length * 100) + '%'; }
       recSummaryEl.innerHTML =
         '<span>記録時間 <b>' + fmtT(dur) + '</b></span>' +
         '<span>最高スコア <b>' + Math.round(max) + '</b></span>' +
         '<span>平均 <b>' + (sum / samples.length).toFixed(0) + '</b></span>' +
-        '<span>要注意以上の時間 <b>' + Math.round(caution / samples.length * 100) + '%</b></span>' +
+        '<span>平常 <b>' + sp('平常') + '</b></span>' +
+        '<span>軽い怒り <b>' + sp('軽い怒り') + '</b></span>' +
+        '<span>怒り <b>' + sp('怒り') + '</b></span>' +
+        '<span>激怒 <b>' + sp('激怒') + '</b></span>' +
         '<span>顔表示 <b>' + bands.length + '回</b></span>' +
         '<span>NG検知 <b>' + ngEvents.length + '回</b></span>' +
         '<span>発話 <b>' + utterances.length + '件</b></span>';
@@ -1264,7 +1379,7 @@ const gaugeCircle = document.getElementById('gaugeCircle');
       uttListEl.innerHTML = '<div class="log-empty">まだありません</div>';
     } else {
       uttListEl.innerHTML = utterances.slice(-60).reverse().map(function(u){
-        return '<div class="utt-row' + (u.score >= CAUTION_AT ? ' hot' : '') + '"><span class="t">' + fmtT(u.t) + '</span><span class="s">' + u.score +
+        return '<div class="utt-row' + (u.score >= ANGRY_AT ? ' hot' : '') + '"><span class="t">' + fmtT(u.t) + '</span><span class="s">' + u.score +
           '</span><span>' + esc(u.text) + '</span></div>';
       }).join('');
     }
@@ -1294,6 +1409,12 @@ const gaugeCircle = document.getElementById('gaugeCircle');
     const font = '11px system-ui, "Hiragino Sans", "Yu Gothic UI", Meiryo, sans-serif';
     ctx.font = font;
 
+    // 四段階の背景帯（平常・軽い怒り・怒り・激怒）
+    [[0, MILD_AT, '#dcefe9'], [MILD_AT, ANGRY_AT, '#faedc4'], [ANGRY_AT, TRIGGER_AT, '#fadfc9'], [TRIGGER_AT, SCORE_CAP, '#f6d2d2']].forEach(function(z){
+      ctx.fillStyle = z[2];
+      const ya = g.y(z[1]), yb = g.y(z[0]);
+      ctx.fillRect(CH.L, ya, g.w - CH.L - CH.R, yb - ya);
+    });
     // 顔表示ラインを超えていた区間
     ctx.fillStyle = 'rgba(217,54,54,.14)';
     bands.forEach(function(b){
@@ -1321,8 +1442,9 @@ const gaugeCircle = document.getElementById('gaugeCircle');
       ctx.beginPath(); ctx.moveTo(CH.L, y); ctx.lineTo(g.w - CH.R, y); ctx.stroke(); ctx.setLineDash([]);
       if(label){ ctx.fillStyle = '#5f6870'; ctx.textAlign = 'left'; ctx.textBaseline = 'middle'; ctx.fillText(label, g.w - CH.R + 6, y); }
     }
-    hline(CAUTION_AT, '#d99a00', CAUTION_AT + ' 要注意', [4, 3]);
-    hline(TRIGGER_AT, '#d93636', TRIGGER_AT + ' 顔表示', [4, 3]);
+    hline(MILD_AT, '#d99a00', MILD_AT + ' 軽い怒り', [4, 3]);
+    hline(ANGRY_AT, '#e0702a', ANGRY_AT + ' 怒り', [4, 3]);
+    hline(TRIGGER_AT, '#d93636', TRIGGER_AT + ' 激怒', [4, 3]);
     hline(0, '#aeb6bd', null);
     ctx.fillStyle = '#5f6870'; ctx.textAlign = 'right'; ctx.textBaseline = 'middle';
     ctx.fillText('0', CH.L - 6, g.y(0));
@@ -1448,7 +1570,8 @@ const gaugeCircle = document.getElementById('gaugeCircle');
     if(asrWatch){ clearInterval(asrWatch); asrWatch = null; }
     if(recognition){ try{ recognition.stop(); }catch(e){} }
     if(stream){ stream.getTracks().forEach(function(t){ t.stop(); }); }
-    if(audioCtx){ audioCtx.close(); }
+    if(audioCtx){ audioCtx.close(); audioCtx = null; }
+    document.getElementById('voiceOn').disabled = false;
 
     liveVideo.style.display = 'none';
     camBox.querySelector('.placeholder').style.display = 'flex';
@@ -1548,14 +1671,20 @@ const gaugeCircle = document.getElementById('gaugeCircle');
     asrRestarts = 0;
     lastAsrResultTs = performance.now();
     recognition.onstart = function(){
+      flushInterim();
       resetHitCounter();
+      asrDiag('聞き取り待ち…');
       badgeSpeech.textContent = asrRestarts ? '音声認識：稼働中（再接続' + asrRestarts + '回）' : '音声認識：稼働中';
       badgeSpeech.classList.remove('warn');
       badgeSpeech.classList.add('on');
     };
-    recognition.onresult = function(e){ lastAsrResultTs = performance.now(); handleSpeech(e); };
+    recognition.onresult = function(e){ lastAsrResultTs = performance.now(); asrDiag('文字起こし中（受信 ' + new Date().toLocaleTimeString('ja-JP') + '）'); handleSpeech(e); };
+    recognition.onaudiostart = function(){ asrDiag('音声認識がマイクを開きました'); };
+    recognition.onspeechstart = function(){ asrDiag('声を検出。文字起こし待ち…'); };
+    recognition.onnomatch = function(){ asrDiag('声は聞こえたが言葉にできませんでした'); };
     recognition.onerror = function(ev){
       const code = ev && ev.error;
+      if(code && code !== 'aborted'){ asrDiag('エラー: ' + code + (code === 'no-speech' ? '（声が検出されませんでした）' : code === 'audio-capture' ? '（マイクを取れません。他のアプリや計測と競合している可能性）' : '')); }
       // no-speech / aborted は普通に起こる。許可の問題とネットワークの問題だけ知らせる
       if(code === 'not-allowed' || code === 'service-not-allowed'){
         asrBlocked = true;
@@ -1568,6 +1697,7 @@ const gaugeCircle = document.getElementById('gaugeCircle');
       }
     };
     recognition.onend = function(){
+      flushInterim();
       if(!running || asrBlocked) return;
       asrRestarts++;
       badgeSpeech.textContent = '音声認識：再接続中…';
@@ -1632,6 +1762,7 @@ const gaugeCircle = document.getElementById('gaugeCircle');
   }
 
   function updatePitch(){
+    if(voiceOff || !audioCtx) return;
     analyser.getFloatTimeDomainData(floatDataArray);
     const freq = detectPitchHz(floatDataArray, audioCtx.sampleRate);
 
@@ -1737,6 +1868,8 @@ const gaugeCircle = document.getElementById('gaugeCircle');
       ratePct.textContent = '基準の ×' + rr.toFixed(1);
     }
 
+    if(voiceOff){ volPct.textContent = '声の解析オフ'; ratePct.textContent = '声の解析オフ'; pitchPct.textContent = '声の解析オフ'; volFill.style.width = '0%'; rateFill.style.width = '0%'; }
+
     // ---- スコアの加点・減点（基準取得が終わってから）----
     if(!calibrating){
       const voicedRecently = (nowTs - lastVoicedTs) < 400; // ゲーム音や物音ではなく「人の声らしい」ときだけ声で加点
@@ -1768,8 +1901,8 @@ const gaugeCircle = document.getElementById('gaugeCircle');
   function updateGauge(sc){
     const frac = Math.min(1, sc / SCORE_CAP);
   gaugeCircle.style.strokeDashoffset = CIRC * (1 - frac);
-    const level = sc >= TRIGGER_AT ? 'trigger' : sc >= CAUTION_AT ? 'caution' : 'calm';
-    const color = level === 'trigger' ? 'var(--red)' : level === 'caution' ? 'var(--amber)' : 'var(--teal)';
+    const level = sc >= TRIGGER_AT ? 'trigger' : sc >= ANGRY_AT ? 'caution' : sc >= MILD_AT ? 'mild' : 'calm';
+    const color = level === 'trigger' ? 'var(--red)' : level === 'caution' ? 'var(--orange)' : level === 'mild' ? 'var(--amber)' : 'var(--teal)';
     pctText.textContent = Math.round(sc);
     gaugeCircle.style.stroke = color;
   pctText.style.color = level === 'calm' ? 'var(--text)' : color;
@@ -1778,8 +1911,8 @@ const gaugeCircle = document.getElementById('gaugeCircle');
     judgePointer.style.background = color;
     judgePointer.style.color = color;
 
-    badgeLevel.textContent = level === 'trigger' ? '状態：顔表示ライン超え' : level === 'caution' ? '状態：要注意' : '状態：穏やか';
-    badgeLevel.className = 'badge' + (level === 'trigger' ? ' warn' : level === 'caution' ? ' caution' : ' on');
+    badgeLevel.textContent = '状態：' + stageOf(sc);
+    badgeLevel.className = 'badge' + (level === 'trigger' ? ' warn' : level === 'caution' ? ' caution' : level === 'mild' ? ' mild' : ' on');
   }
 
   function causeLabel(){
@@ -1800,7 +1933,7 @@ const gaugeCircle = document.getElementById('gaugeCircle');
         : causeLabel();
       applyModeVisual(true);
       recTriggerStart();
-    } else if(state === 'triggered' && score < CAUTION_AT){
+    } else if(state === 'triggered' && score < ANGRY_AT){
       recTriggerEnd();
       const duration = ((Date.now() - triggerStartTime) / 1000).toFixed(1);
       addLog(duration, triggerCause);
