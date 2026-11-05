@@ -975,9 +975,21 @@ const gaugeCircle = document.getElementById('gaugeCircle');
   }
 
   // 毎フレーム呼ぶ。音量の包絡線の山を数えて、直近のテンポ（山/秒）を更新する
+  // 暗騒音（その場の何も話していないときの音量）を追いかけ、「声が出ている」とみなす最低ラインを決める。
+  // 固定値だと、マイクの感度が低い端末で「声が遠い」状態がずっと続くため。
+  let noiseFloor = 0.002;
+  let noiseWarm = 60;   // 開始直後の約1秒は、周囲の音量を素早く学習する
+  function trackNoise(rms){
+    if(noiseWarm > 0){ noiseWarm--; noiseFloor += (rms - noiseFloor) * 0.2; return; }
+    if(rms < noiseFloor) noiseFloor += (rms - noiseFloor) * 0.2;
+    else if(rms < noiseFloor * 2) noiseFloor += (rms - noiseFloor) * 0.01;   // 静かなときだけ追従（話している間は上げない）
+  }
+  function voiceGate(){ return Math.min(0.02, Math.max(0.0015, noiseFloor * 2.5)); }
+
   function updateRate(rms, nowTs, dt){
+    trackNoise(rms);
     envFast += (rms - envFast) * 0.5;
-    const thr = Math.max(0.012, baseRms ? baseRms * 0.3 : 0);
+    const thr = Math.max(voiceGate(), baseRms ? baseRms * 0.3 : 0);
     const speaking = envFast > thr;
     if(speaking) lastSpeechTs = nowTs;
     const decay = Math.exp(-dt / RATE_TAU);
@@ -989,7 +1001,7 @@ const gaugeCircle = document.getElementById('gaugeCircle');
     if(envFast < envMinSincePeak || lastPeakVal === 0) envMinSincePeak = envFast;
     // 山の判定：1フレーム前が極大で、閾値より大きく、前の山から110ms以上あき、間に谷（前の山の8割以下）があった
     const isPeak = envPrev1 > envPrev2 && envPrev1 >= envFast && envPrev1 > thr &&
-      (nowTs - lastPeakTs) > 110 && (lastPeakVal === 0 || envMinSincePeak < lastPeakVal * 0.8);
+      (nowTs - lastPeakTs) > 110 && (lastPeakVal === 0 || envMinSincePeak < Math.max(lastPeakVal, envPrev1) * 0.8);
     if(isPeak){
       peakAcc += 1;
       lastPeakTs = nowTs;
@@ -1666,6 +1678,7 @@ const gaugeCircle = document.getElementById('gaugeCircle');
     calibPitch = [];
     calibRms = [];
     calibRate = [];
+    noiseFloor = 0.002; noiseWarm = 60;
     resetRateTracker();
     score = 0;
     baseRms = null;
@@ -1682,7 +1695,7 @@ const gaugeCircle = document.getElementById('gaugeCircle');
 
   function finishCalibration(){
     pitchBaseline = median(calibPitch);
-    baseRms = Math.max(0.01, median(calibRms));
+    baseRms = Math.max(0.002, median(calibRms));
     baseRate = calibRate.length >= 10 ? Math.max(2, median(calibRate)) : 5; // 取れなかったときは標準的な値(5山/秒)
     pitchSmoothed = pitchBaseline;
     rmsSmoothed = baseRms;
@@ -1768,33 +1781,42 @@ const gaugeCircle = document.getElementById('gaugeCircle');
   }
 
   function getVolume(){
-    analyser.getByteTimeDomainData(dataArray);
+    // 8bitの値だと小さい声では細かい差が潰れるため、浮動小数点の波形でRMSを出す
+    analyser.getFloatTimeDomainData(floatDataArray);
     let sumSquares = 0;
-    for(let i = 0; i < dataArray.length; i++){
-      const norm = (dataArray[i] - 128) / 128;
-      sumSquares += norm * norm;
-    }
-    return Math.sqrt(sumSquares / dataArray.length); // 0..~1 RMS
+    for(let i = 0; i < floatDataArray.length; i++){ sumSquares += floatDataArray[i] * floatDataArray[i]; }
+    return Math.sqrt(sumSquares / floatDataArray.length); // 0..~1 RMS
   }
 
   // 自己相関法（Autocorrelation）による基本周波数(F0=声のピッチ)の推定。
   // 音量の大きさとは独立して「声の高さ」を検出するために使用する。
-  function detectPitchHz(buf, sampleRate){
+  function detectPitchHz(buf, sampleRate, gate){
     const n = buf.length;
-    let rms = 0;
-    for(let i = 0; i < n; i++){ rms += buf[i] * buf[i]; }
-    rms = Math.sqrt(rms / n);
-    if(rms < 0.012) return -1; // 無音・小声すぎる場合は判定しない
+    let r0 = 0;
+    for(let i = 0; i < n; i++){ r0 += buf[i] * buf[i]; }
+    const rms = Math.sqrt(r0 / n);
+    if(rms < (gate || 0.004)) return -1; // 暗騒音より小さい音は判定しない（マイクの音量が小さくても動くよう、環境ノイズに合わせた値）
 
     // 人の声の基本周波数レンジ（約60Hz〜500Hz）に相当するラグ範囲だけを探索して高速化
     const minLag = Math.floor(sampleRate / 500);
     const maxLag = Math.min(n - 1, Math.ceil(sampleRate / 60));
 
-    let bestLag = -1, bestVal = 0;
+    const corr = new Float32Array(maxLag + 2);
+    let bestVal = 0, bestNorm = 0;
     for(let lag = minLag; lag <= maxLag; lag++){
       let sum = 0;
       for(let i = 0; i < n - lag; i++){ sum += buf[i] * buf[i + lag]; }
-      if(sum > bestVal){ bestVal = sum; bestLag = lag; }
+      corr[lag] = sum;
+      if(sum > bestVal) bestVal = sum;
+      const nv = sum * n / (n - lag) / r0;   // 重なりの長さで割って、ラグが長くても公平に比べる
+      if(nv > bestNorm) bestNorm = nv;
+    }
+    // 声かどうかの判定：周期性（自己相関の強さ）が足りない音は、ノイズ・息・物音として捨てる
+    if(bestNorm < 0.4) return -1;
+    // 倍の周期（1オクターブ低い誤検出）を避けるため、最大値の90%以上ある最初の山を採る
+    let bestLag = -1;
+    for(let lag = minLag + 1; lag < maxLag; lag++){
+      if(corr[lag] >= bestVal * 0.9 && corr[lag] >= corr[lag - 1] && corr[lag] >= corr[lag + 1]){ bestLag = lag; break; }
     }
     if(bestLag <= 0) return -1;
 
@@ -1806,7 +1828,7 @@ const gaugeCircle = document.getElementById('gaugeCircle');
   function updatePitch(){
     if(voiceOff || !audioCtx) return;
     analyser.getFloatTimeDomainData(floatDataArray);
-    const freq = detectPitchHz(floatDataArray, audioCtx.sampleRate);
+    const freq = detectPitchHz(floatDataArray, audioCtx.sampleRate, Math.max(voiceGate(), baseRms ? baseRms * 0.15 : 0));
 
     if(freq < 0){
       pitchRateNow = 0; // 声が出ていない間はピッチ加点なし
@@ -1887,7 +1909,7 @@ const gaugeCircle = document.getElementById('gaugeCircle');
       volFill.style.background = 'var(--teal)';
       volPct.textContent = '基準取得中（音量 ' + Math.round(volPercent) + '）';
       if(calibrating && calibPitch.length === 0 && Date.now() - calibStart > 6000){
-        calibText.innerHTML = '声がうまく拾えていません。マイクに近づくか、もう少しはっきり話してみてください。';
+        calibText.innerHTML = '声の高さがまだ取れていません（いまの音量 ' + Math.round(rms * 1000) / 10 + '、必要な最低ライン ' + Math.round(voiceGate() * 1000) / 10 + '）。マイクに近づくか、もう少しはっきり話してみてください。うなる声や息だけだと取れません。';
       }
     } else {
       const ratio = ratioHeld;
