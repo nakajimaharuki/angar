@@ -399,6 +399,7 @@
       <div class="live-asr" id="liveAsr">
         <div class="live-asr-head"><b>リアルタイム文字起こし</b><span id="asrDiag">待機中</span></div>
         <div class="live-asr-body" id="liveTrans"><span class="feed-empty">開始すると、聞き取った言葉がここに出ます（NGワード以外も全部）</span></div>
+        <label class="live-asr-opt"><input type="checkbox" id="camOn" checked> カメラを使う　<small>動作中でも切り替えられます。オフにすると、激怒時に自分の顔は映りません。</small></label>
         <label class="live-asr-opt"><input type="checkbox" id="voiceOn" checked> 声の解析（大きさ・高さ・速さ）を使う　<small>スマホで文字が出ないときは外して開始してください。文字起こしを優先し、NGワードだけで加点します。</small></label>
       </div>
 
@@ -1117,36 +1118,10 @@ const gaugeCircle = document.getElementById('gaugeCircle');
   // 声の大小の差を正しく測るため、ブラウザの自動音量調整・ノイズ抑制・エコー除去は切る
   const RAW_AUDIO = { echoCancellation: false, noiseSuppression: false, autoGainControl: false };
 
-  let voiceOff = false;
-  async function startSystem(){
-    statusLine.innerHTML = '権限を確認しています…';
-    let camOk = true;
-    voiceOff = !document.getElementById('voiceOn').checked;
-    document.getElementById('voiceOn').disabled = true;
-    if(voiceOff){
-      // 声の解析なし：マイクは音声認識だけが使う（スマホでは、2つが同じマイクを取り合うと文字が出なくなることがあるため）
-      try{ stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user', width: { ideal: 320 }, height: { ideal: 240 } } }); }
-      catch(err){ stream = null; camOk = false; }
-    } else
-
-    // 1) まず音声+映像を同時に試す
-    { try{
-      stream = await navigator.mediaDevices.getUserMedia({ audio: RAW_AUDIO, video: { facingMode: 'user', width: { ideal: 320 }, height: { ideal: 240 } } });
-    }catch(err){
-      // 2) 失敗したら音声のみで再挑戦（カメラなし/権限なしでも一部機能を使えるように）
-      camOk = false;
-      try{
-        stream = await navigator.mediaDevices.getUserMedia({ audio: RAW_AUDIO });
-        statusLine.innerHTML = '<span class="err">カメラは利用できませんでした（' + explainError(err) + '）。音声のみで続行します。鏡UIの映像は表示されません。</span>';
-      }catch(err2){
-        statusLine.innerHTML = '<span class="err">マイク・カメラのどちらも取得できませんでした。' + explainError(err2) + '</span>';
-        return;
-      }
-    } }
-
-    const hasVideoTrack = !!stream && stream.getVideoTracks().length > 0;
-
-    if(hasVideoTrack){
+  // カメラの映像を画面に出す／消す（動作中でも切り替えられる）
+  function attachCamera(){
+    const has = !!stream && stream.getVideoTracks().length > 0;
+    if(has){
       liveVideo.srcObject = stream;
       overlayVideo.srcObject = stream;
       liveVideo.style.display = 'block';
@@ -1156,9 +1131,76 @@ const gaugeCircle = document.getElementById('gaugeCircle');
       badgeCam.textContent = 'カメラ：稼働中';
       badgeCam.classList.add('on');
     } else {
-      camBox.querySelector('.placeholder').textContent = 'カメラなし（音声のみで動作中）';
-      badgeCam.textContent = 'カメラ：利用不可';
+      liveVideo.style.display = 'none';
+      camBox.querySelector('.placeholder').style.display = 'flex';
+      camBox.querySelector('.placeholder').textContent = running || stream ? 'カメラはオフです' : 'カメラの映像がここに出ます';
+      badgeCam.textContent = running ? 'カメラ：オフ' : 'カメラ：停止中';
+      badgeCam.classList.remove('on');
     }
+  }
+  document.getElementById('camOn').addEventListener('change', async function(ev){
+    if(!running) return;
+    const want = ev.target.checked;
+    if(!want){
+      if(stream){ stream.getVideoTracks().forEach(function(t){ t.stop(); stream.removeTrack(t); }); }
+      liveVideo.srcObject = null; overlayVideo.srcObject = null;
+      attachCamera();
+      applyModeVisual(state === 'triggered');
+    } else {
+      try{
+        const vs = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user', width: { ideal: 320 }, height: { ideal: 240 } } });
+        if(!stream) stream = new MediaStream();
+        vs.getVideoTracks().forEach(function(t){ stream.addTrack(t); });
+        attachCamera();
+        applyModeVisual(state === 'triggered');
+      }catch(err){
+        ev.target.checked = false;
+        statusLine.innerHTML = '<span class="err">カメラを開始できませんでした。' + explainError(err) + '</span>';
+      }
+    }
+  });
+
+  let voiceOff = false;
+  async function startSystem(){
+    statusLine.innerHTML = '権限を確認しています…';
+    let camOk = true;
+    voiceOff = !document.getElementById('voiceOn').checked;
+    document.getElementById('voiceOn').disabled = true;
+    const wantCam = document.getElementById('camOn').checked;
+    stream = null;
+    if(voiceOff && !wantCam){
+      camOk = false;   // マイクもカメラも取得しない（音声認識だけ）
+    } else {
+      // 声の解析なし＝マイクは音声認識だけが使う（スマホでは、2つが同じマイクを取り合うと文字が出なくなることがあるため）
+      const vc = { facingMode: 'user', width: { ideal: 320 }, height: { ideal: 240 } };
+      const c = {};
+      if(!voiceOff) c.audio = RAW_AUDIO;
+      if(wantCam) c.video = vc;
+      try{
+        stream = await navigator.mediaDevices.getUserMedia(c);
+      }catch(err){
+        camOk = false;
+        if(c.audio && c.video){
+          // カメラが使えないときは、音声のみで再挑戦
+          try{
+            stream = await navigator.mediaDevices.getUserMedia({ audio: RAW_AUDIO });
+            statusLine.innerHTML = '<span class="err">カメラは利用できませんでした（' + explainError(err) + '）。音声のみで続行します。</span>';
+          }catch(err2){
+            statusLine.innerHTML = '<span class="err">マイク・カメラのどちらも取得できませんでした。' + explainError(err2) + '</span>';
+            document.getElementById('voiceOn').disabled = false;
+            return;
+          }
+        } else if(c.audio){
+          statusLine.innerHTML = '<span class="err">マイクを取得できませんでした。' + explainError(err) + '</span>';
+          document.getElementById('voiceOn').disabled = false;
+          return;
+        } else {
+          stream = null;
+        }
+      }
+    }
+
+    attachCamera();
 
     acquireWakeLock();
     if(voiceOff){
@@ -1569,7 +1611,7 @@ const gaugeCircle = document.getElementById('gaugeCircle');
     if(rafId) cancelAnimationFrame(rafId);
     if(asrWatch){ clearInterval(asrWatch); asrWatch = null; }
     if(recognition){ try{ recognition.stop(); }catch(e){} }
-    if(stream){ stream.getTracks().forEach(function(t){ t.stop(); }); }
+    if(stream){ stream.getTracks().forEach(function(t){ t.stop(); }); stream = null; }
     if(audioCtx){ audioCtx.close(); audioCtx = null; }
     document.getElementById('voiceOn').disabled = false;
 
