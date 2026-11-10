@@ -337,7 +337,7 @@
       </div>
 
       <details class="row uplink-box" id="uplinkBox">
-        <summary class="field-label">記録の自動送信（研究者用・任意）</summary>
+        <summary class="field-label" style="cursor:pointer;">▶ 記録の自動送信（研究者用・任意）</summary>
         <div class="dict-note">記録先（Googleスプレッドシート）に、プレイ中の記録を30秒ごとと停止時に送ります。研究者が作ったリンク（?send=…&amp;code=P01）で開けば、自動で入ります。音声・映像・氏名は送りません。</div>
         <label class="field-label" for="upUrl">送信先URL</label>
         <input type="text" id="upUrl" placeholder="https://script.google.com/macros/s/…/exec">
@@ -354,8 +354,6 @@
         <span class="field-label">NGワード辞書（有効<span class="range-val" id="dictTotal">0</span>語）</span>
         <div class="dict" id="dictList"></div>
         <div class="dict-note">強・中・弱は、NGワード1回あたりの加点の大きさです。同じ言葉を繰り返したときも、言うたびに加点します。薄く表示した語は、上のカテゴリと重複しています。</div>
-      </div>
-
       </div>
 
       <div class="row">
