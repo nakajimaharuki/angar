@@ -346,6 +346,7 @@
         <label class="field-label" for="upCode">参加者コード（P01 など。氏名は入れない）</label>
         <input type="text" id="upCode" placeholder="P01">
         <div class="dict-note" id="uplinkStatus">送信先が未設定です（記録はこの画面の中だけ）。</div>
+        <button class="btn" id="upTest" style="margin-top:6px;">接続テスト（試しに1件送る）</button>
         <button class="btn" id="upRetry" style="display:none; margin-top:6px;">未送信の記録を、もう一度送る</button>
       </details>
 
@@ -353,6 +354,8 @@
         <span class="field-label">NGワード辞書（有効<span class="range-val" id="dictTotal">0</span>語）</span>
         <div class="dict" id="dictList"></div>
         <div class="dict-note">強・中・弱は、NGワード1回あたりの加点の大きさです。同じ言葉を繰り返したときも、言うたびに加点します。薄く表示した語は、上のカテゴリと重複しています。</div>
+      </div>
+
       </div>
 
       <div class="row">
@@ -524,6 +527,7 @@
       <span>背景の色＝平常(緑)／軽い怒り(黄)／怒り(橙)／激怒(赤)</span>
     </div>
     <div class="log-tools">
+      <button class="btn small" id="shareBtn">記録をまとめて送る・保存</button>
       <button class="btn ghost small" id="chartPngBtn">グラフを画像で保存</button>
       <button class="btn ghost small" id="trendCsvBtn">推移CSV</button>
       <button class="btn ghost small" id="wordCsvBtn">単語CSV</button>
@@ -1378,13 +1382,15 @@ const gaugeCircle = document.getElementById('gaugeCircle');
     }
     if(recLastSample && nowTs - recLastSample < 1000) return;
     recLastSample = nowTs;
+    const vs = varStats();
     samples.push({
       t: (Date.now() - recStart) / 1000,
       clock: clockOf(),
       score: score,
       vol: baseRms ? ratioHeld : 0,
       rate: (rateNow !== null && baseRate) ? rateNow / baseRate : null,
-      level: stageOf(score)
+      level: stageOf(score),
+      f0: vs.f0, f0max: vs.f0max, f0sd: vs.f0sd, vsd: vs.vsd
     });
     renderRecord();
   }
@@ -1625,11 +1631,13 @@ const gaugeCircle = document.getElementById('gaugeCircle');
   }
 
   document.getElementById('trendCsvBtn').addEventListener('click', function(){
-    saveCsv(['経過秒', '時刻', 'スコア', '状態', '音量(基準比)', '話す速さ(基準比)', 'NGワード'],
+    saveCsv(['経過秒', '時刻', 'スコア', '状態', '音量(基準比)', '話す速さ(基準比)', 'NGワード', '声の高さ(Hz)', '声の高さの揺れ(半音SD・5秒)', '音量の揺れ(基準比SD・5秒)', '声の高さの最大(Hz・直近1秒)'],
       samples.map(function(s, i){
         const prev = i ? samples[i - 1].t : -1;
         const ng = ngEvents.filter(function(e){ return e.t > prev && e.t <= s.t; }).map(function(e){ return e.word; }).join(' / ');
-        return [s.t.toFixed(1), s.clock, s.score.toFixed(1), s.level, s.vol.toFixed(2), s.rate === null ? '' : s.rate.toFixed(2), ng];
+        return [s.t.toFixed(1), s.clock, s.score.toFixed(1), s.level, s.vol.toFixed(2), s.rate === null ? '' : s.rate.toFixed(2), ng,
+          s.f0 == null ? '' : Math.round(s.f0), s.f0sd == null ? '' : s.f0sd.toFixed(2), s.vsd == null ? '' : s.vsd.toFixed(2),
+          s.f0max == null ? '' : Math.round(s.f0max)];
       }), 'anger_trend');
   });
   document.getElementById('wordCsvBtn').addEventListener('click', function(){
@@ -1683,7 +1691,8 @@ const gaugeCircle = document.getElementById('gaugeCircle');
       v: 1, key: (upKey.value || '').trim(), sessionId: Uplink.sessionId, code: (upCode.value || '').trim() || '未設定',
       seq: Uplink.seq, final: !!final, startedAt: Uplink.startedAt, mode: currentMode, genre: genreSelect.value, voiceOff: voiceOff,
       baseRms: baseRms, pitchBaseline: pitchBaseline, baseRate: baseRate,
-      samples: samples.slice(I.s).map(function(x){ return [Math.round(x.t * 10) / 10, x.clock, Math.round(x.score * 10) / 10, Math.round((x.vol || 0) * 100) / 100, x.rate == null ? '' : Math.round(x.rate * 100) / 100, x.level]; }),
+      samples: samples.slice(I.s).map(function(x){ return [Math.round(x.t * 10) / 10, x.clock, Math.round(x.score * 10) / 10, Math.round((x.vol || 0) * 100) / 100, x.rate == null ? '' : Math.round(x.rate * 100) / 100, x.level,
+        x.f0 == null ? '' : Math.round(x.f0), x.f0sd == null ? '' : Math.round(x.f0sd * 100) / 100, x.vsd == null ? '' : Math.round(x.vsd * 100) / 100, x.f0max == null ? '' : Math.round(x.f0max)]; }),
       ng: ngEvents.slice(I.n).map(function(x){ return [Math.round(x.t * 10) / 10, x.word, x.cat, x.pts]; }),
       utt: utterances.slice(I.u).map(function(x){ return [Math.round(x.t * 10) / 10, x.clock, x.text, x.score]; }),
       logs: logs.slice(0, Math.max(0, logs.length - Uplink.logBase)).map(function(l){ return [l.time, l.mode, l.genre, l.duration, l.cause]; }).reverse()
@@ -1730,6 +1739,55 @@ const gaugeCircle = document.getElementById('gaugeCircle');
     setUpStatus('送信済み（' + new Date().toLocaleTimeString('ja-JP') + '）。この端末には記録は残りません。');
   }
   upRetry.addEventListener('click', uplinkFlush);
+  // 接続テスト：コード「TEST」で1件送り、結果をそのまま画面に出す
+  document.getElementById('upTest').addEventListener('click', async function(){
+    const url = (upUrl.value || '').trim();
+    if(!/^https:\/\//.test(url)){ setUpStatus('送信先URLが入っていません。リンクの ?send= のあとに、ウェブアプリのURL（…/exec）を入れてください。', true); return; }
+    setUpStatus('テスト送信中…');
+    const c = { v: 1, key: (upKey.value || '').trim(), sessionId: 'TEST-' + Date.now(), code: 'TEST', seq: 0, final: true, startedAt: new Date().toISOString(), mode: currentMode, genre: genreSelect.value, voiceOff: false,
+      samples: [[0, clockOf(), 0, 1, '', '平常']], ng: [], utt: [[0, clockOf(), '接続テスト', 0]], logs: [], words: [], bands: [] };
+    try{
+      const r = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify(c) });
+      const txt = await r.text();
+      let j = null; try{ j = JSON.parse(txt); }catch(e){}
+      if(j && j.ok){ setUpStatus('成功：スプレッドシートに「TEST」の行が入りました。sessions シートを見てください。'); }
+      else if(j){ setUpStatus('受け箱は応答しましたが、受け付けませんでした：' + (j.error || '不明') + '（合言葉 key が違う可能性）', true); }
+      else { setUpStatus('受け箱から、想定外の返事が来ました（URLが違う、またはデプロイが古い可能性）：' + txt.slice(0, 80), true); }
+    }catch(err){
+      setUpStatus('送れませんでした：' + (err && err.message ? err.message : err) + '。URLの末尾が /exec か、「アクセスできるユーザー：全員」かを確認してください。', true);
+    }
+  });
+  // 記録を1つのファイルにまとめて、共有（LINE・メールなど）か保存で渡す。送信先の設定がなくても使える
+  document.getElementById('shareBtn').addEventListener('click', async function(){
+    if(!samples.length && !utterances.length){ statusLine.innerHTML = '<span class="err">記録がまだありません。</span>'; return; }
+    const code = (upCode.value || '').trim() || '未設定';
+    const bundle = {
+      v: 1, kind: 'anger_bundle', code: code, savedAt: new Date().toISOString(), startedAt: Uplink.startedAt || '', mode: currentMode, genre: genreSelect.value, voiceOff: voiceOff,
+      baseRms: baseRms, pitchBaseline: pitchBaseline, baseRate: baseRate,
+      samples: samples.map(function(x){ return [Math.round(x.t * 10) / 10, x.clock, Math.round(x.score * 10) / 10, Math.round((x.vol || 0) * 100) / 100, x.rate == null ? '' : Math.round(x.rate * 100) / 100, x.level,
+        x.f0 == null ? '' : Math.round(x.f0), x.f0sd == null ? '' : Math.round(x.f0sd * 100) / 100, x.vsd == null ? '' : Math.round(x.vsd * 100) / 100, x.f0max == null ? '' : Math.round(x.f0max)]; }),
+      ng: ngEvents.map(function(x){ return [Math.round(x.t * 10) / 10, x.word, x.cat, x.pts]; }),
+      utt: utterances.map(function(x){ return [Math.round(x.t * 10) / 10, x.clock, x.text, x.score]; }),
+      logs: logs.slice().reverse().map(function(l){ return [l.time, l.mode, l.genre, l.duration, l.cause]; }),
+      bands: bands.map(function(b){ return [Math.round(b.t0 * 10) / 10, b.t1 === null ? '' : Math.round(b.t1 * 10) / 10]; }),
+      words: Object.keys(wordCounts).map(function(k){ const w = wordCounts[k]; return [w.word, w.count, w.ng ? 1 : 0]; })
+    };
+    const text = JSON.stringify(bundle);
+    const name = 'anger_' + code + '_' + stampNow() + '.txt';
+    try{
+      const file = new File([text], name, { type: 'text/plain' });
+      if(navigator.canShare && navigator.canShare({ files: [file] })){
+        await navigator.share({ files: [file], title: '怒り検知の記録（' + code + '）' });
+        statusLine.textContent = '共有の画面を開きました。送り先（LINE・メールなど）を選んでください。';
+        return;
+      }
+    }catch(err){
+      if(err && err.name === 'AbortError') return;   // 共有をやめた
+    }
+    saveBlob(new Blob([text], { type: 'text/plain' }), name);
+    statusLine.textContent = 'この端末にファイルを保存しました（' + name + '）。そのファイルを、研究者に送ってください。';
+  });
+
   // タブを閉じるとき、最後の分をできるだけ送る（確実ではない）
   window.addEventListener('pagehide', function(){
     if(!uplinkOn()) return;
@@ -1948,6 +2006,20 @@ const gaugeCircle = document.getElementById('gaugeCircle');
     return freq;
   }
 
+  // 声の高さ・大きさの「揺れ」（直近5秒）を記録用に集める。判定には使わず、あとから怒りと喜びの違いを調べる材料にする
+  const pitchWin = [], rmsWin = [];
+  function winPush(w, ts, v){ w.push([ts, v]); while(w.length && ts - w[0][0] > 5000) w.shift(); }
+  function sdOf(a){ if(a.length < 3) return null; const m = a.reduce(function(x, y){ return x + y; }, 0) / a.length; return Math.sqrt(a.reduce(function(x, y){ return x + (y - m) * (y - m); }, 0) / a.length); }
+  function varStats(){
+    const now = performance.now();
+    const f1 = pitchWin.filter(function(x){ return now - x[0] <= 1000; }).map(function(x){ return x[1]; });
+    const f0 = f1.length ? f1.reduce(function(x, y){ return x + y; }, 0) / f1.length : null;
+    const f0max = f1.length ? Math.max.apply(null, f1) : null;   // 直近1秒の最大値（武田の最高F0に相当）
+    const st =pitchWin.map(function(x){ return 12 * Math.log2(x[1] / 100); });   // 半音（話者の声の高さに左右されにくい）
+    const f0sd = sdOf(st);
+    const vsdAbs = sdOf(rmsWin.map(function(x){ return x[1]; }));
+    return { f0: f0, f0max: f0max, f0sd: f0sd, vsd: (vsdAbs !== null && baseRms) ? vsdAbs / baseRms : null };
+  }
   function updatePitch(){
     if(voiceOff || !audioCtx) return;
     analyser.getFloatTimeDomainData(floatDataArray);
@@ -1959,6 +2031,8 @@ const gaugeCircle = document.getElementById('gaugeCircle');
       return;
     }
     lastVoicedTs = performance.now();
+    winPush(pitchWin, lastVoicedTs, freq);
+    winPush(rmsWin, lastVoicedTs, currentRms);
 
     // ---- 基準づくり中：声が出ているタイミングごとに、ピッチと大きさを記録 ----
     if(calibrating){
